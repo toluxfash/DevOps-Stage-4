@@ -1,0 +1,174 @@
+version: "3.8"
+
+services:
+  traefik:
+    image: "traefik:v2.10"
+    container_name: "traefik"
+    command:
+      - "--log.level=DEBUG"
+      - "--api.insecure=false"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--certificatesresolvers.letsencryptresolver.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencryptresolver.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencryptresolver.acme.email=admin@citatech.online"
+      - "--certificatesresolvers.letsencryptresolver.acme.storage=/etc/traefik/acme.json"
+      - "--providers.docker.defaultRule=Host(`fash.zapto.org`)"
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - web
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - traefik-certificates:/etc/traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.middlewares.cors.headers.accesscontrolalloworiginlist=*"
+      - "traefik.http.middlewares.cors.headers.accesscontrolallowmethods=GET,POST,PUT,DELETE,OPTIONS"
+      - "traefik.http.middlewares.cors.headers.accesscontrolallowheaders=Content-Type,Authorization"
+      - "traefik.http.middlewares.cors.headers.accesscontrolmaxage=100"
+      - "traefik.http.middlewares.cors.headers.addvaryheader=true"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - VITE_TODOS_API_ADDRESS=https://fash.zapto.org//api/todos
+      - VITE_USERS_API_ADDRESS=https://fash.zapto.org//api/users
+      - VITE_AUTH_API_ADDRESS=https://fash.zapto.org//api/auth
+      - HOST=0.0.0.0
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - auth-api
+      - todos-api
+      - users-api
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: sh -c "npm run dev -- --host 0.0.0.0"
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`fash.zapto.org`)"
+      - "traefik.http.services.frontend.loadbalancer.server.port=8080"
+      - "traefik.http.routers.frontend.entrypoints=websecure"
+      - "traefik.http.routers.frontend.tls.certresolver=letsencryptresolver"
+
+  auth-api:
+    build:
+      context: ./auth-api
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:8081:8081"
+    environment:
+      - AUTH_API_PORT=8081
+      - JWT_SECRET=myfancysecret
+      - USERS_API_ADDRESS=http://users-api:8083
+    depends_on:
+      - users-api
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.auth.rule=Host(`fash.zapto.org`) && PathPrefix(`/api/auth`)"
+      - "traefik.http.services.auth.loadbalancer.server.port=8081"
+      - "traefik.http.middlewares.auth-stripprefix.stripprefix.prefixes=/api/auth"
+      - "traefik.http.middlewares.auth-stripprefix.stripprefix.forceSlash=false"
+      - "traefik.http.routers.auth.middlewares=auth-stripprefix,cors"
+      - "traefik.http.routers.auth.entrypoints=websecure"
+      - "traefik.http.routers.auth.tls.certresolver=letsencryptresolver"
+      - "traefik.http.routers.auth-direct.rule=Host(`fash.zapto.org`) && (Path(`/login`) || Path(`/register`))"
+      - "traefik.http.routers.auth-direct.service=auth"
+      - "traefik.http.routers.auth-direct.entrypoints=websecure"
+      - "traefik.http.routers.auth-direct.tls.certresolver=letsencryptresolver"
+      - "traefik.http.routers.auth-direct.middlewares=cors"
+    
+
+  todos-api:
+    build:
+      context: ./todos-api
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      - JWT_SECRET=myfancysecret
+      - REDIS_HOST=redis-queue
+      - REDIS_PORT=6379
+      - REDIS_CHANNEL=log_channel
+    depends_on:
+      - redis-queue
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.todos.rule=Host(`fash.zapto.org`) && PathPrefix(`/api/todos`)"
+      - "traefik.http.services.todos.loadbalancer.server.port=8082"
+      - "traefik.http.middlewares.todos-stripprefix.stripprefix.prefixes=/api/todos"
+      - "traefik.http.routers.todos.middlewares=todos-stripprefix"
+      - "traefik.http.routers.todos.entrypoints=websecure"
+      - "traefik.http.routers.todos.tls.certresolver=letsencryptresolver"
+      - "traefik.http.routers.todos-direct.rule=Host(`fash.zapto.org`) && Path(`/todos`)"
+      - "traefik.http.routers.todos-direct.service=todos"
+      - "traefik.http.routers.todos-direct.entrypoints=websecure"
+      - "traefik.http.routers.todos-direct.tls.certresolver=letsencryptresolver"
+      - "traefik.http.routers.todos-direct.middlewares=cors"
+
+  users-api:
+    build:
+      context: ./users-api
+      dockerfile: Dockerfile
+    ports:
+      - "8083:8083"
+    environment:
+      - SERVER_PORT=8083
+      - JWT_SECRET=myfancysecret
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.users.rule=Host(`fash.zapto.org`) && PathPrefix(`/api/users`)"
+      - "traefik.http.services.users.loadbalancer.server.port=8083"
+      - "traefik.http.middlewares.users-stripprefix.stripprefix.prefixes=/api/users"
+      - "traefik.http.routers.users.middlewares=users-stripprefix"
+      - "traefik.http.routers.users.entrypoints=websecure"
+      - "traefik.http.routers.users.tls.certresolver=letsencryptresolver"
+
+  log-message-processor:
+    build:
+      context: ./log-message-processor
+      dockerfile: Dockerfile
+    environment:
+      - REDIS_HOST=redis-queue
+      - REDIS_PORT=6379
+      - REDIS_CHANNEL=log_channel
+    depends_on:
+      - redis-queue
+    networks:
+      - web
+
+  redis-queue:
+    image: "redis:alpine"
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - web
+
+networks:
+  web:
+    driver: bridge
+
+volumes:
+  traefik-certificates:
+  redis-data:
