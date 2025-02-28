@@ -41,9 +41,9 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - VITE_TODOS_API_ADDRESS=https://fash.zapto.org//api/todos
-      - VITE_USERS_API_ADDRESS=https://fash.zapto.org//api/users
-      - VITE_AUTH_API_ADDRESS=https://fash.zapto.org//api/auth
+      - VITE_TODOS_API_ADDRESS=https://fash.zapto.org/api/todos
+      - VITE_USERS_API_ADDRESS=https://fash.zapto.org/api/users
+      - VITE_AUTH_API_ADDRESS=https://fash.zapto.org/api/auth
       - HOST=0.0.0.0
     volumes:
       - ./frontend:/app
