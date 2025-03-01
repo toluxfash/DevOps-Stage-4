@@ -15,7 +15,7 @@ services:
       - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
       - "--certificatesresolvers.letsencryptresolver.acme.httpchallenge=true"
       - "--certificatesresolvers.letsencryptresolver.acme.httpchallenge.entrypoint=web"
-      - "--certificatesresolvers.letsencryptresolver.acme.email=admin@citatech.online"
+      - "--certificatesresolvers.letsencryptresolver.acme.email=admin@fash.zapto.org"
       - "--certificatesresolvers.letsencryptresolver.acme.storage=/etc/traefik/acme.json"
       - "--providers.docker.defaultRule=Host(`fash.zapto.org`)"
     ports:
